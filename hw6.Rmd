@@ -1,0 +1,12 @@
+---
+title: "hw6"
+output: html_document
+---
+
+```{r}
+homicide_raw = read_csv("data/homicide-data.csv") |>
+  mutate(
+    city_state = str_c(city, state, sep = ", ")
+  )
+```
+
