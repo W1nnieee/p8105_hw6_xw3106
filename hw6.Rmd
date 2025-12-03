@@ -5,6 +5,8 @@ output: github_document
 ```{r}
 library(janitor)
 library(tidyverse)
+library(modelr)
+
 ```
 
 # Problem 1
@@ -92,4 +94,150 @@ library(p8105.datasets)
 data("weather_df")
 
 ```
+
+```{r}
+boot_sample = function(data) {
+    sampled = sample_frac(data, replace = TRUE)
+    fit = lm(tmax ~ tmin + prcp, data = sampled)
+    r2 = broom::glance(fit)$r.squared
+    coefs = broom::tidy(fit)
+    beta1 = coefs |> filter(term == "tmin") |> pull(estimate)
+    beta2 = coefs |> filter(term == "prcp") |> pull(estimate)
+    ratio = beta1 / beta2
+    tibble(
+    r2 = r2,
+    ratio = ratio
+  )
+}
+```
+
+```{r}
+set.seed(8105)
+boot_results = 
+  map(1:5000, ~ boot_sample(weather_df)) |>
+  bind_rows()
+```
+
+```{r}
+ggplot(boot_results, aes(x = r2)) +
+  geom_histogram(bins = 50) +
+  labs(title = "Bootstrap Distribution of R²")
+
+ggplot(boot_results, aes(x = ratio)) +
+  geom_histogram(bins = 50) +
+  labs(title = "Bootstrap Distribution of β1 / β2")
+
+boot_results |>
+  summarize(
+    r2_lower = quantile(r2, 0.025),
+    r2_upper = quantile(r2, 0.975),
+    ratio_lower = quantile(ratio, 0.025),
+    ratio_upper = quantile(ratio, 0.975)
+  )
+
+```
+
+The bootstrap distribution of R^2 is tightly concentrated around 0.94, and the 95% confidence interval (0.934–0.947) indicates that the model consistently explains a large proportion of the variation in `tmax`. The distribution of β1/β2 is wide and entirely negative, with a 95% CI of –277 to –124, reflecting the positive effect of `tmin` and the small negative effect of `prcp` in the fitted model.
+
+#Problem 3
+```{r}
+birthweight_df = 
+  read_csv("birthweight.csv") |>
+  janitor::clean_names()
+```
+
+```{r}
+birthweight_df = birthweight_df |>
+  mutate(
+    babysex = factor(babysex),
+    frace = factor(frace),
+    mrace = factor(mrace),
+    malform = factor(malform)
+  )
+#check NA
+birthweight_df |> 
+  summarize(across(everything(), ~ sum(is.na(.x))))
+```
+To begin, I loaded the birthweight dataset, standardized variable names using clean_names(), and converted several categorical variables (such as baby sex, mother’s race, and malformation status) to factors to reflect their qualitative structure. I then verified that no variables contained missing values, ensuring that all observations could be included directly in the regression modeling without requiring additional preprocessing or imputation.
+```{r}
+#model a
+model_a = lm(
+  bwt ~ blength + bhead + gaweeks + smoken + ppbmi + babysex,
+  data = birthweight_df
+)
+
+summary(model_a)
+```
+In this model, I chose to include important physical predictors of fetal growth (blength, bhead, gaweeks, babysex) as well as maternal factors that affect birthweight (smoken, ppbmi). These variables are medically reasonable and expected to have strong associations with birthweight.
+
+```{r}
+mod_a_df = birthweight_df |>
+  add_predictions(model_a) |>
+  add_residuals(model_a)
+
+ggplot(mod_a_df, aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.4) +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(
+    title = "Residuals vs Fitted Values for Model 0",
+    x = "Fitted values",
+    y = "Residuals"
+  )
+```
+The residuals-versus-fitted plot for Model A shows a fairly random scatter of points around zero, with no strong curvature or increasing spread. This suggests that the linearity and constant-variance assumptions are reasonably satisfied, and there is no obvious evidence of systematic model misspecification. Overall, the plot indicates that Model A provides an adequate fit to the data.
+```{r}
+#model b and c
+model_b = lm(bwt ~ blength + gaweeks, data = birthweight_df)
+summary(model_b)
+
+model_c = lm(bwt ~ bhead * blength * babysex, data = birthweight_df)
+summary(model_c)
+```
+
+```{r}
+set.seed(8105)
+
+cv_df =
+  crossv_mc(birthweight_df, 100) |>
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+
+cv_results =
+  cv_df |>
+  mutate(
+    mod_a_fit = map(train, ~ lm(bwt ~ blength + bhead + gaweeks + smoken + ppbmi + babysex, data = .x)),
+    mod_b_fit = map(train, ~ lm(bwt ~ blength + gaweeks, data = .x)),
+    mod_c_fit = map(train, ~ lm(bwt ~ bhead * blength * babysex, data = .x))
+  ) |>
+  mutate(
+    rmse_a = map2_dbl(mod_a_fit, test, ~ sqrt(mean((.y$bwt - predict(.x, .y))^2))),
+    rmse_b = map2_dbl(mod_b_fit, test, ~ sqrt(mean((.y$bwt - predict(.x, .y))^2))),
+    rmse_c = map2_dbl(mod_c_fit, test, ~ sqrt(mean((.y$bwt - predict(.x, .y))^2)))
+  )
+
+```
+
+```{r}
+cv_results |>
+  select(rmse_a, rmse_b, rmse_c) |>
+  pivot_longer(everything(), names_to = "model", values_to = "rmse") |>
+  ggplot(aes(x = model, y = rmse)) +
+  geom_boxplot() +
+  labs(
+    title = "Cross-Validated RMSE for Model A, B, and C",
+    x = "Model",
+    y = "RMSE"
+  )
+
+cv_results |>
+  summarize(
+    mean_a = mean(rmse_a),
+    mean_b = mean(rmse_b),
+    mean_c = mean(rmse_c)
+  )
+
+```
+From the plot and the numerical results, it showed Model A had the lowest mean RMSE (287), followed by Model C (291), while Model B performed substantially worse with a mean RMSE of 334. These results indicate that Model A provides the best predictive accuracy among the three models when doin across the 100 Monte Carlo splits.
 
