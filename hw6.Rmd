@@ -1,12 +1,95 @@
 ---
 title: "hw6"
-output: html_document
+output: github_document
 ---
-
 ```{r}
-homicide_raw = read_csv("data/homicide-data.csv") |>
+library(janitor)
+library(tidyverse)
+```
+
+# Problem 1
+```{r}
+#load data,create city_state
+homicide_raw = read_csv("homicide-data.csv") |> 
+  clean_names() |> 
   mutate(
     city_state = str_c(city, state, sep = ", ")
   )
+
+homicide_df = homicide_raw |>
+  mutate(
+    victim_age = na_if(victim_age, "Unknown"), 
+    victim_age = as.numeric(victim_age),  
+  ) |>
+  filter(    
+    !(city_state %in% c("Tulsa, AL", "Dallas, TX", "Phoenix, AZ", "Kansas City, MO")),
+    victim_race %in% c("White", "Black"))
+```
+
+```{r}
+baltimore_df = homicide_df |>
+  filter(city_state == "Baltimore, MD") |>
+  mutate(
+    solved_bin = if_else(disposition == "Closed by arrest", 1, 0)
+  )
+
+fit_baltimore = glm(
+  solved_bin ~ victim_age + victim_sex + victim_race,
+  data = baltimore_df,
+  family = binomial
+)
+
+balt_results = fit_baltimore |>
+  broom::tidy(conf.int = TRUE, exponentiate = TRUE)
+
+baltimore_or = balt_results |>
+  filter(term == "victim_sexMale") |>
+  select(estimate, conf.low, conf.high)
+
+```
+
+```{r}
+city_nested = homicide_df |>
+  mutate(
+    solved_bin = if_else(disposition == "Closed by arrest", 1, 0)
+  ) |>
+  group_by(city_state) |>
+  nest()
+
+city_models = city_nested |>
+  mutate(
+    model = map(data, ~ glm(
+      solved_bin ~ victim_age + victim_sex + victim_race,
+      data = .x,
+      family = binomial
+    )),
+    results = map(model, ~ broom::tidy(.x, conf.int = TRUE, exponentiate = TRUE))
+  ) |>
+  unnest(results) |>
+  filter(term == "victim_sexMale") |>
+  select(city_state, estimate, conf.low, conf.high)
+
+```
+
+```{r}
+ggplot(city_models, aes(
+  x = estimate,
+  y = fct_reorder(city_state, estimate)
+)) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high)) +
+  labs(
+    x = "Adjusted OR (Male vs Female)",
+    y = "City",
+    title = "Adjusted Odds Ratios for Solving Homicides"
+  )
+
+```
+
+#Problem 2
+```{r}
+library(p8105.datasets)
+data("weather_df")
+
 ```
 
