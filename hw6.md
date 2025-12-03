@@ -236,6 +236,14 @@ birthweight_df |>
     ## #   pnumlbw <int>, pnumsga <int>, ppbmi <int>, ppwt <int>, smoken <int>,
     ## #   wtgain <int>
 
+To begin, I loaded the birthweight dataset, standardized variable names
+using clean_names(), and converted several categorical variables (such
+as baby sex, mother’s race, and malformation status) to factors to
+reflect their qualitative structure. I then verified that no variables
+contained missing values, ensuring that all observations could be
+included directly in the regression modeling without requiring
+additional preprocessing or imputation.
+
 ``` r
 #model a
 model_a = lm(
@@ -291,7 +299,13 @@ ggplot(mod_a_df, aes(x = pred, y = resid)) +
   )
 ```
 
-![](hw6_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
+![](hw6_files/figure-gfm/unnamed-chunk-13-1.png)<!-- --> The
+residuals-versus-fitted plot for Model A shows a fairly random scatter
+of points around zero, with no strong curvature or increasing spread.
+This suggests that the linearity and constant-variance assumptions are
+reasonably satisfied, and there is no obvious evidence of systematic
+model misspecification. Overall, the plot indicates that Model A
+provides an adequate fit to the data.
 
 ``` r
 #model b and c
